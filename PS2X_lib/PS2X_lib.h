@@ -1,3 +1,23 @@
+/*
+ * Tom Price's fork of the Arduino PS2X library 29 Sept 2012
+ * http://smokedprojects.blogspot.com/2012/09/arduino-foot-pedal.html 
+ * 
+ * Changelog:
+ *
+ * o  Pin definitions changed from Arduino PinMode to AVR PORT/PIN
+ *
+ * o  Some extra bits added to the serial handshaking protocol
+ *    Most saliently control of the ACK line
+ *
+ * o  A new method PS2X::emulateGuitar() allowing the Arduino
+ *    to emulate a Guitar Hero controller by handling the
+ *    controller side of the serial communication protocol
+ *
+ * NB in my hands the timing of the bitbanged serial communication
+ *    only works with DEBUG mode enabled
+ */
+
+
 /******************************************************************
 *  Super amazing PS2 controller Arduino Library v1.8
 *		details and example sketch: 
@@ -57,9 +77,6 @@
 *		Reorganized directory so examples show up in Arduino IDE menu
 *    1.8
 *		Added Arduino 1.0 compatibility. 
-*    1.9
-*       Kurt - Added detection and recovery from dropping from analog mode, plus
-*       integreated Chipkit (pic32mx...) support
 *
 *
 *
@@ -72,12 +89,22 @@ GNU General Public License for more details.
 *  
 ******************************************************************/
 
+/* Modified version for Guitar Hero pedals
+ * August 2012
+ */
 
-// $$$$$$$$$$$$ DEBUG ENABLE SECTION $$$$$$$$$$$$$$$$
-// to debug ps2 controller, uncomment these two lines to print out debug to uart
 
-//#define PS2X_DEBUG
-//#define PS2X_COM_DEBUG
+/* $$$$$$$$$$$$ DEBUG ENABLE SECTION $$$$$$$$$$$$$$$$
+ * these 2 lines uncommented to print out debug to uart
+ *
+ * Tom Price says:
+ *
+ * NB in my hands the timing of the bitbanged serial communication
+ *    only works with DEBUG mode enabled
+ */
+
+#define PS2X_DEBUG
+#define PS2X_COM_DEBUG
 
 
 #ifndef PS2X_lib_h
@@ -91,18 +118,11 @@ GNU General Public License for more details.
 #include <math.h>
 #include <stdio.h>
 #include <stdint.h>
-#ifdef __AVR__
 #include <avr/io.h>
+#include <util/delay.h>
 
 #define CTRL_CLK        4
 #define CTRL_BYTE_DELAY 3
-#else
-// Pic32...
-#include <pins_arduino.h>
-#define CTRL_CLK        5
-#define CTRL_CLK_HIGH   5
-#define CTRL_BYTE_DELAY 4
-#endif 
 
 //These are our button constants
 #define PSB_SELECT      0x0001
@@ -143,6 +163,11 @@ GNU General Public License for more details.
 #define PSS_LX 7
 #define PSS_LY 8
 
+//PS2 controller modes
+#define MODE_DIGITAL 	0x41
+#define MODE_ANALOGUE	0x73
+#define MODE_CONFIG  	0xF3
+
 //These are analog buttons
 #define PSAB_PAD_RIGHT   9
 #define PSAB_PAD_UP      11
@@ -161,77 +186,59 @@ GNU General Public License for more details.
 #define PSAB_CROSS       15
 #define PSAB_SQUARE      16
 
+//PORT and PIN presets
+#define PB1 1
+#define PB2 2
+#define PB3 3
+#define PB4 4
+#define PB5 5
 
-#define SET(x,y) (x|=(1<<y))
-#define CLR(x,y) (x&=(~(1<<y)))
-#define CHK(x,y) (x & (1<<y))
-#define TOG(x,y) (x^=(1<<y))
+// pins for arduino
+#define CONTROLLER_DAT_PIN PB5 // brown wire
+#define CONTROLLER_CMD_PIN PB4 // orange wire
+#define CONTROLLER_ATT_PIN PB3 // yellow wire
+#define CONTROLLER_CLK_PIN PB2 // blue wire
+
+// this pin is used only in guitar emulation mode
+#define CONTROLLER_ACK_PIN PB1
+
+#define INPUT_MODE(port,pin) (DDR ## port &= ~(1<<pin))
+#define OUTPUT_MODE(port,pin) (DDR ## port |= (1<<pin))
+#define CLEAR(port,pin) (PORT ## port &= ~(1<<pin))
+#define SET(port,pin) (PORT ## port |= (1<<pin))
+#define TOGGLE(port,pin) (PORT ## port ^= (1<<pin))
+#define READ(port,pin) (PIN ## port & (1<<pin)) 
 
 
 
-class PS2X {
-public:
-boolean Button(uint16_t);
-unsigned int ButtonDataByte();
-boolean NewButtonState();
-boolean NewButtonState(unsigned int);
-boolean ButtonPressed(unsigned int);
-boolean ButtonReleased(unsigned int);
-void read_gamepad();
-boolean  read_gamepad(boolean, byte);
-byte readType();
-byte config_gamepad(uint8_t, uint8_t, uint8_t, uint8_t);
-byte config_gamepad(uint8_t, uint8_t, uint8_t, uint8_t, bool, bool);
-void enableRumble();
-bool enablePressures();
-byte Analog(byte);
-void reconfig_gamepad();
-private:
-
-inline void CLK_SET(void);
-inline void CLK_CLR(void);
-inline void CMD_SET(void);
-inline void CMD_CLR(void);
-inline void ATT_SET(void);
-inline void ATT_CLR(void);
-inline bool DAT_CHK(void);
-
-unsigned char _gamepad_shiftinout (char);
-unsigned char PS2data[21];
-void sendCommandString(byte*, byte);
-unsigned char i;
-unsigned int last_buttons;
-unsigned int buttons;
-#ifdef __AVR__
-uint8_t maskToBitNum(uint8_t);
-uint8_t _clk_mask; 
-volatile uint8_t *_clk_oreg;
-uint8_t _cmd_mask; 
-volatile uint8_t *_cmd_oreg;
-uint8_t _att_mask; 
-volatile uint8_t *_att_oreg;
-uint8_t _dat_mask; 
-volatile uint8_t *_dat_ireg;
-#else
-uint8_t maskToBitNum(uint8_t);
-uint16_t 				_clk_mask; 
-volatile uint32_t *		_clk_lport_set;
-volatile uint32_t *		_clk_lport_clr;
-uint16_t 				_cmd_mask; 
-volatile uint32_t *		_cmd_lport_set;
-volatile uint32_t *		_cmd_lport_clr;
-uint16_t 				_att_mask; 
-volatile uint32_t *		_att_lport_set;
-volatile uint32_t *		_att_lport_clr;
-uint16_t 				_dat_mask; 
-volatile uint32_t *		_dat_lport;
-#endif
-unsigned long last_read;
-byte read_delay;
-byte controller_type;
-boolean en_Rumble;
-boolean en_Pressures;
-
+class PS2X 
+{
+	public:
+		boolean Button(uint16_t);
+		unsigned int ButtonDataByte();
+		boolean NewButtonState();
+		boolean NewButtonState(unsigned int);
+		boolean ButtonPressed(unsigned int);
+		boolean ButtonReleased(unsigned int);
+		void read_gamepad();
+		byte readType();
+		byte config_gamepad();
+		byte Analog(byte);
+		void emulateGuitar();
+	
+	private:
+		unsigned char _gamepad_shiftinout (char);
+		unsigned char _gamepad_shiftinout (char,boolean);
+		unsigned char PS2data[21];
+		void sendCommandString(byte*, byte);
+		void reconfig_gamepad();
+		unsigned char i;
+		unsigned int last_buttons;
+		unsigned int buttons;
+		unsigned long last_read;
+		byte read_delay;
+		byte controller_type;
+		//byte const[5];
 };
 
 #endif

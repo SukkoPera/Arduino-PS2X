@@ -1,3 +1,23 @@
+/*
+ * Tom Price's fork of the Arduino PS2X library 29 Sept 2012
+ * http://smokedprojects.blogspot.com/2012/09/arduino-foot-pedal.html
+ * 
+ * Changelog:
+ *
+ * o  Pin definitions changed from Arduino PinMode to AVR PORT/PIN
+ *
+ * o  Some extra bits added to the serial handshaking protocol
+ *    Most saliently control of the ACK line
+ *
+ * o  A new method PS2X::emulateGuitar() allowing the Arduino
+ *    to emulate a Guitar Hero controller by handling the
+ *    controller side of the serial communication protocol
+ *
+ * NB in my hands the timing of the bitbanged serial communication
+ *    only works with DEBUG mode enabled
+ */
+
+
 /******************************************************************
 *  Super amazing PS2 controller Arduino Library v1.8
 *		details and example sketch: 
