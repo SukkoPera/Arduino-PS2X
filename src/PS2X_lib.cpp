@@ -53,9 +53,22 @@ byte PS2X::Analog (byte button) {
 }
 
 /****************************************************************************************/
+
+// set up the speed, data order and data mode
+SPISettings spiSettings(1000000, MSBFIRST, SPI_MODE2);
+
 unsigned char PS2X::_gamepad_shiftinout (char byte) {
 	unsigned char tmp = 0;
 
+#ifdef USE_HW_SPI
+	
+	SPI.beginTransaction (spiSettings);
+	digitalWrite (attPin, LOW);
+	tmp = SPI.transfer (byte);
+	digitalWrite (attPin, HIGH);
+	SPI.endTransaction();
+	
+#else
 	for (unsigned char i = 0; i < 8; i++) {
 		if (CHK (byte, i)) {
 			CMD_SET();
@@ -79,6 +92,8 @@ unsigned char PS2X::_gamepad_shiftinout (char byte) {
 
 	CMD_SET();
 	delayMicroseconds (CTRL_BYTE_DELAY);
+#endif
+
 	return tmp;
 }
 
@@ -179,6 +194,29 @@ boolean PS2X::read_gamepad (boolean motor1, byte motor2) {
 	last_read = millis();
 	return ((PS2data[1] & 0xf0) == 0x70);  // 1 = OK = analog mode - 0 = NOK
 }
+
+/****************************************************************************************/
+
+/* Uses hardware SPI, so pins cannot be chosen freely:
+ * - dat: MISO
+ * - cmd: MOSI
+ * - att: SS
+ * - clk: SCK
+ */
+#ifdef USE_HW_SPI
+
+//~ #define SPI_SS 10
+
+byte PS2X::config_gamepad (byte att = SPI_SS, bool pressures, bool rumble) {
+	byte temp[sizeof (type_read)];
+	
+	// set the Slave Select Pins as outputs:
+	pinMode (att, OUTPUT);
+	
+	// initialize SPI:
+	SPI.begin ();
+}
+#endif
 
 /****************************************************************************************/
 byte PS2X::config_gamepad (uint8_t clk, uint8_t cmd, uint8_t att, uint8_t dat) {
